@@ -200,6 +200,10 @@
       <span class="rvalue" id="traffic-status">待查询</span>
     </div>
     <div class="result-row">
+      <span class="rlabel">📊 数据策略</span>
+      <span class="rvalue" id="strategy-name" style="font-size:12px;color:#64748b">-</span>
+    </div>
+    <div class="result-row">
       <span class="rlabel">📍 当前位置</span>
       <span class="rvalue" id="my-location" style="font-size:12px;color:#64748b">待获取</span>
     </div>
@@ -360,17 +364,22 @@ async function queryTraffic() {
     // paths[0] 是最优方案
     const path = route.paths[0];
 
+    // 调试：在控制台输出完整 API 响应
+    console.log("[路况API] 完整响应:", JSON.stringify(data, null, 2));
+    console.log("[路况API] strategy:", path.strategy, "| distance:", path.distance, "m | duration:", path.duration, "s");
+
     const distance    = parseInt(path.distance);   // 米
-    const duration    = parseInt(path.duration);   // 秒
+    const duration    = parseInt(path.duration);   // 秒（高德返回的是字符串）
     const tolls       = parseInt(path.tolls || 0); // 过路费
     const tollDistance = parseInt(path.toll_distance || 0);
 
     const durationMin = Math.round(duration / 60);
     const distanceKm  = (distance / 1000).toFixed(1);
 
-    // ETA
+    // ETA：用当前时间（UTC毫秒）+ 预计耗时（秒），再用北京时间显示
     const etaDate = new Date(Date.now() + duration * 1000);
     const etaStr  = getBJTimeStr(etaDate);
+    console.log("[路况API] ETA计算: 当前Date.now()=" + Date.now() + " + duration=" + duration + "s = etaDate=" + etaDate.toISOString() + " => 北京时间 " + etaStr);
 
     // 路况判断：高德直接提供了每个 step 的 traffic_color
     // 用整体速度估算
@@ -385,20 +394,29 @@ async function queryTraffic() {
     document.getElementById("distance").textContent     = `${distanceKm} km`;
     document.getElementById("traffic-status").innerHTML = trafficBadge;
     document.getElementById("eta-time").textContent     = etaStr;
+    document.getElementById("strategy-name").textContent = path.strategy || "实时路况";
 
-    // 路线步骤
+    // 路线步骤（高德返回 tmcs 数组，每个元素有 status 字段）
     if (path.steps && path.steps.length > 0) {
       document.getElementById("detail-steps").innerHTML =
         path.steps.map((s, i) => {
           let roadInfo = s.road || s.instruction || "行驶";
           const distM  = parseInt(s.distance || 0);
-          // 路况颜色映射
+          // 从 tmcs 数组提取路况（高德返回中文 status：畅通/缓行/拥堵/严重拥堵）
+          const tmcs = s.tmcs || [];
+          let worstStatus = "未知";
           let tmcIcon = "⚪";
-          if (s.tmc_status === 0) tmcIcon = "🟢"; // 畅通
-          else if (s.tmc_status === 1) tmcIcon = "🟡"; // 缓行
-          else if (s.tmc_status === 2) tmcIcon = "🟠"; // 拥堵
-          else if (s.tmc_status === 3) tmcIcon = "🔴"; // 严重拥堵
-          return `<div class="step-item">${i+1}. ${roadInfo} · ${distM>=1000?(distM/1000).toFixed(1)+"km":distM+"m"} ${tmcIcon}</div>`;
+          const statusRank = { "畅通": 0, "未知": 0, "缓行": 1, "拥堵": 2, "严重拥堵": 3 };
+          for (const t of tmcs) {
+            if ((statusRank[t.status] || 0) > (statusRank[worstStatus] || 0)) {
+              worstStatus = t.status;
+            }
+          }
+          if (worstStatus === "畅通" || worstStatus === "未知") tmcIcon = "🟢";
+          else if (worstStatus === "缓行") tmcIcon = "🟡";
+          else if (worstStatus === "拥堵") tmcIcon = "🟠";
+          else if (worstStatus === "严重拥堵") tmcIcon = "🔴";
+          return `<div class="step-item">${i+1}. ${roadInfo} · ${distM>=1000?(distM/1000).toFixed(1)+"km":distM+"m"} ${tmcIcon} ${worstStatus!=="未知"?worstStatus:""}</div>`;
         }).join("");
       document.getElementById("detail-toggle").style.display = "block";
     }
