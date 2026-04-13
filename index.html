@@ -331,7 +331,7 @@ async function queryDriving(origLat, origLng) {
   const params = new URLSearchParams({
     origin:      `${origLng},${origLat}`,     // 高德格式：经度,纬度
     destination: `${DEST_LNG},${DEST_LAT}`,   // 同上
-    strategy:    "0",                         // 速度优先策略
+    strategy:    "2",                         // 距离最短策略
     extensions:  "all",                       // 返回路况信息
     output:      "json",
     key:         amapKey,
