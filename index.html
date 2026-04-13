@@ -207,6 +207,11 @@
       <span class="rlabel">📍 当前位置</span>
       <span class="rvalue" id="my-location" style="font-size:12px;color:#64748b">待获取</span>
     </div>
+    <div class="result-row">
+      <span class="rlabel">📡 GPS精度</span>
+      <span class="rvalue" id="gps-accuracy" style="font-size:12px;color:#64748b">-</span>
+    </div>
+    </div>
   </div>
 
   <!-- 路线详情 -->
@@ -353,9 +358,12 @@ function startWatching() {
       currentPos = pos;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
       document.getElementById("my-location").textContent =
         `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      console.log("[定位] 位置更新:", lat, lng, "精度:", pos.coords.accuracy, "m");
+      document.getElementById("gps-accuracy").textContent = acc < 1000 ? `±${Math.round(acc)}m` : `±${(acc/1000).toFixed(1)}km`;
+      document.getElementById("gps-accuracy").style.color = acc <= 50 ? "#34d399" : acc <= 200 ? "#fbbf24" : "#f87171";
+      console.log("[定位] 位置更新:", lat, lng, "精度:", acc, "m");
     },
     (err) => {
       console.warn("[定位] watchPosition 错误:", err.message);
@@ -398,9 +406,28 @@ async function queryTraffic() {
     const pos     = await getPosition();
     const origLat = pos.coords.latitude;   // WGS84（GPS 原始坐标）
     const origLng = pos.coords.longitude;
+    const accuracy = pos.coords.accuracy || 99999;
 
     document.getElementById("my-location").textContent =
       `${origLat.toFixed(4)}, ${origLng.toFixed(4)}`;
+
+    // GPS 精度校验
+    const accEl = document.getElementById("gps-accuracy");
+    if (accuracy <= 50) {
+      accEl.textContent = `±${Math.round(accuracy)}m（精准）`;
+      accEl.style.color = "#34d399";
+    } else if (accuracy <= 200) {
+      accEl.textContent = `±${Math.round(accuracy)}m（一般）`;
+      accEl.style.color = "#fbbf24";
+    } else {
+      accEl.textContent = `±${accuracy < 1000 ? Math.round(accuracy)+"m" : (accuracy/1000).toFixed(1)+"km"}（不准⚠️）`;
+      accEl.style.color = "#f87171";
+      if (accuracy > 500) {
+        setStatus(`⚠️ GPS 精度仅 ±${Math.round(accuracy)}m，距离可能严重偏差！请将手机放到窗边或到室外`, "error");
+        btnQ.disabled = false;
+        return; // 精度太差，不查询
+      }
+    }
 
     // WGS84 → GCJ02 坐标转换（GPS坐标转高德坐标，否则路线规划会有偏移）
     setStatus("🔄 正在转换坐标（GPS → 高德）...", "loading");
