@@ -323,7 +323,37 @@ async function queryDriving(origLat, origLng) {
 }
 
 // ─── 定位 ─────────────────────────────────────────────────────────────────────
+// 使用 watchPosition 持续跟踪位置变化，避免 Safari GPS 缓存
+let watchId = null;
+let currentPos = null; // 缓存最新位置
+
+function startWatching() {
+  if (watchId !== null) return; // 已在监听
+  if (!navigator.geolocation) return;
+
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      currentPos = pos;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      document.getElementById("my-location").textContent =
+        `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      console.log("[定位] 位置更新:", lat, lng, "精度:", pos.coords.accuracy, "m");
+    },
+    (err) => {
+      console.warn("[定位] watchPosition 错误:", err.message);
+    },
+    { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+  );
+}
+
 function getPosition() {
+  // 优先返回 watchPosition 的最新位置（实时且不缓存）
+  if (currentPos) {
+    console.log("[定位] 使用 watchPosition 缓存位置:", currentPos.coords.latitude, currentPos.coords.longitude);
+    return Promise.resolve(currentPos);
+  }
+  // fallback：首次获取
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error("浏览器不支持定位"));
@@ -336,7 +366,7 @@ function getPosition() {
         3: "定位超时",
       };
       reject(new Error(msgs[err.code] || "定位失败"));
-    }, { timeout: 15000, enableHighAccuracy: true, maximumAge: 30000 });
+    }, { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 });
   });
 }
 
@@ -551,6 +581,9 @@ function setStatus(msg, type) {
 loadSettings();
 setInterval(updateClock, 1000);
 updateClock();
+
+// 启动持续位置监听（确保每次查询用的是最新位置）
+startWatching();
 
 (function checkAutoMode() {
   const params = new URLSearchParams(window.location.search);
