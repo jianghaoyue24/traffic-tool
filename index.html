@@ -240,9 +240,10 @@
 
 <script>
 // ─── 配置 ─────────────────────────────────────────────────────────────────────
-const DEST_LNG = 116.474124;  // 望京西 经度
-const DEST_LAT = 39.996031;   // 望京西 纬度
+const DEST_LNG = 116.474124;  // 望京西 经度（GCJ02）
+const DEST_LAT = 39.996031;   // 望京西 纬度（GCJ02）
 const AMAP_API = "https://restapi.amap.com/v3/direction/driving";
+const AMAP_CONVERT_API = "https://restapi.amap.com/v3/assistant/coordinate/convert";
 const AMAP_KEY = "f3660021280033f17adb7fcdf2e0c5b9"; // 高德地图 Web 服务 Key（写死）
 // 高德坐标格式：经度,纬度
 
@@ -299,6 +300,22 @@ function stopCountdown() {
   if (countTimer) { clearInterval(countTimer); countTimer = null; }
   document.getElementById("ring-text").textContent = "--";
   const f = document.getElementById("ring-fill"); if(f) f.style.strokeDashoffset=0;
+}
+
+// ─── WGS84 → GCJ02 坐标转换（GPS坐标 → 高德坐标） ──────────────────────────────
+async function wgs84ToGcj02(lat, lng) {
+  const params = new URLSearchParams({
+    locations: `${lng},${lat}`,  // 高德格式：经度,纬度
+    coordsys:  "gps",            // 输入为 WGS84（GPS原始坐标）
+    output:    "json",
+    key:       AMAP_KEY,
+  });
+  const resp = await fetch(`${AMAP_CONVERT_API}?${params}`);
+  const data = await resp.json();
+  if (data.status !== "1") throw new Error("坐标转换失败");
+  // 返回格式："经度,纬度"
+  const parts = data.locations.split(",");
+  return { lng: parseFloat(parts[0]), lat: parseFloat(parts[1]) };
 }
 
 // ─── 高德驾车路线查询 ──────────────────────────────────────────────────────────
@@ -379,15 +396,21 @@ async function queryTraffic() {
 
   try {
     const pos     = await getPosition();
-    const origLat = pos.coords.latitude;
+    const origLat = pos.coords.latitude;   // WGS84（GPS 原始坐标）
     const origLng = pos.coords.longitude;
 
     document.getElementById("my-location").textContent =
       `${origLat.toFixed(4)}, ${origLng.toFixed(4)}`;
 
+    // WGS84 → GCJ02 坐标转换（GPS坐标转高德坐标，否则路线规划会有偏移）
+    setStatus("🔄 正在转换坐标（GPS → 高德）...", "loading");
+    const gcj = await wgs84ToGcj02(origLat, origLng);
+    console.log("[坐标转换] WGS84:", origLat, origLng, "→ GCJ02:", gcj.lat, gcj.lng,
+                "偏移:", Math.round((gcj.lat - origLat)*111000), "m,", Math.round((gcj.lng - origLng)*111000*Math.cos(origLat*Math.PI/180)), "m");
+
     setStatus("🗺️ 正在高德地图查询实时路况...", "loading");
 
-    const data = await queryDriving(origLat, origLng);
+    const data = await queryDriving(gcj.lat, gcj.lng);
 
     // 解析高德返回结果
     const route = data.route;
